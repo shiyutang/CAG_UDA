@@ -31,6 +31,35 @@ def init_random():
     random.seed(cfg.get('seed', 1337))
 
 
+def monitor(model):
+    score_cl, _ = model.metrics.running_metrics_val_clusters.get_scores()
+
+    logger.info('clus_IoU: {}'.format(score_cl["Mean IoU : \t"]))
+    logger.info('clus_Recall: {}'.format(model.metrics.calc_mean_Clu_recall()))
+    logger.info(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 1])
+    logger.info('clus_Acc: {}'.format(
+        np.mean(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 1])))
+    logger.info(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 2])
+    writer.add_scalar('metrics_clus/mIOU', score_cl["Mean IoU : \t"], model.iter + 1)
+    writer.add_scalar('metrics_clus/Recall', model.metrics.calc_mean_Clu_recall(), model.iter + 1)
+    writer.add_scalar('metrics_clus/Acc',
+                      np.mean(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 1]),
+                      model.iter + 1)
+
+    score_cl, _ = model.metrics.running_metrics_val_threshold.get_scores()
+    logger.info('thr_IoU: {}'.format(score_cl["Mean IoU : \t"]))
+    logger.info('thr_Recall: {}'.format(model.metrics.calc_mean_Thr_recall()))
+    logger.info(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 1])
+    logger.info('thr_Acc: {}'.format(
+        np.mean(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 1])))
+    logger.info(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 2])
+    writer.add_scalar('metrics_thr/mIOU', score_cl["Mean IoU : \t"], model.iter + 1)
+    writer.add_scalar('metrics_thr/Recall', model.metrics.calc_mean_Thr_recall(), model.iter + 1)
+    writer.add_scalar('metrics_thr/Acc',
+                      np.mean(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 1]),
+                      model.iter + 1)
+
+
 def train(cfg, writer, logger):
     init_random()
 
@@ -55,6 +84,9 @@ def train(cfg, writer, logger):
     # create model
     model = CustomModel(cfg, writer, logger)
 
+    # LOSS function
+    loss_fn = get_loss_function(cfg)
+
     # load category anchors
     objective_vectors = torch.load('category_anchors')
     model.objective_vectors = objective_vectors['objective_vectors']
@@ -65,7 +97,6 @@ def train(cfg, writer, logger):
     source_running_metrics_val = RunningScore(cfg['data']['source']['n_class'])
     val_loss_meter, source_val_loss_meter = AverageMeter(), AverageMeter()
     time_meter = AverageMeter()
-    loss_fn = get_loss_function(cfg)
 
     # begin training
     model.iter = 0
@@ -80,17 +111,21 @@ def train(cfg, writer, logger):
             if model.iter > cfg['training']['train_iters']:
                 break
 
-            # train on source & target
+            ############################
+            # train on source & target #
+            ############################
+            # get data
             images, labels, source_img_name = data_sets.source_train_loader.next()
             images, labels = images.to(device), labels.to(device)
             target_image, target_label = target_image.to(device), target_label.to(device)
 
+            # init model
             model.train(logger=logger)
-
             if cfg['training'].get('freeze_bn'):
                 model.freeze_bn_apply()
             model.optimizer_zero_grad()
 
+            # train for one batch
             loss, loss_cls_L2, loss_pseudo = model.step(images, labels, target_image, target_label)
             model.scheduler_step()
 
@@ -137,38 +172,9 @@ def train(cfg, writer, logger):
                 logger.info('Best iou until now is {}'.format(model.best_iou))
 
             # monitoring the accuracy and recall of CAG-based PLA and probability-based PLA
-            score_cl, _ = model.metrics.running_metrics_val_clusters.get_scores()
-
-            logger.info('clus_IoU: {}'.format(score_cl["Mean IoU : \t"]))
-            logger.info('clus_Recall: {}'.format(model.metrics.calc_mean_Clu_recall()))
-            logger.info(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 1])
-            logger.info('clus_Acc: {}'.format(
-                np.mean(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 1])))
-            logger.info(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 2])
-            writer.add_scalar('metrics_clus/mIOU', score_cl["Mean IoU : \t"], model.iter + 1)
-            writer.add_scalar('metrics_clus/Recall', model.metrics.calc_mean_Clu_recall(), model.iter + 1)
-            writer.add_scalar('metrics_clus/Acc',
-                              np.mean(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 1]),
-                              model.iter + 1)
-
-            score_cl, _ = model.metrics.running_metrics_val_threshold.get_scores()
-            logger.info('thr_IoU: {}'.format(score_cl["Mean IoU : \t"]))
-            logger.info('thr_Recall: {}'.format(model.metrics.calc_mean_Thr_recall()))
-            logger.info(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 1])
-            logger.info('thr_Acc: {}'.format(
-                np.mean(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 1])))
-            logger.info(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 2])
-            writer.add_scalar('metrics_thr/mIOU', score_cl["Mean IoU : \t"], model.iter + 1)
-            writer.add_scalar('metrics_thr/Recall', model.metrics.calc_mean_Thr_recall(), model.iter + 1)
-            writer.add_scalar('metrics_thr/Acc',
-                              np.mean(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 1]),
-                              model.iter + 1)
+            monitor(model)
 
             model.metrics.reset()
-
-            if (model.iter + 1) == cfg['training']['train_iters']:
-                flag = False
-                break
 
 
 def validation(model, logger, writer, datasets, device, running_metrics_val, val_loss_meter, loss_fn, \

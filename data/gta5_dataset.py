@@ -237,7 +237,7 @@ if __name__ == "__main__":
     local_path = "/home/qzha2506/remote/dataset/GTA5/"
     dst = GTA5_loader(local_path, split='train', is_transform=True, augmentations=augmentations)
     bs = 4
-    trainloader = data.DataLoader(dst, batch_size=bs, num_workers=10)
+    trainloader = data.DataLoader(dst, batch_size=bs, num_workers=0)
     for i, data in enumerate(trainloader):
         imgs, labels = data
         # import pdb;pdb.set_trace()

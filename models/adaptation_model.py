@@ -378,17 +378,19 @@ class CustomModel():
         return
 
     def train(self, net=None, logger=None):
-        if net==None:
+        """
+        Set the model train mode")
+        :param net:
+        :param logger:
+        :return:
+        """
+        if net is None:
             for net in self.nets:
                 net.train()
             for net in self.nets_DP:
                 net.train()
-            # if logger!=None:    
-            #     logger.info("Successfully set the model train mode") 
         else:
             net.train()
-            # if logger!= None:
-            #     logger.info(print("Successfully set {} train mode".format(net.__class__.__name__)))
         return
 
     def set_requires_grad(self, logger, net, requires_grad = False):
