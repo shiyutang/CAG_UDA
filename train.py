@@ -34,69 +34,66 @@ def init_random():
 def train(cfg, writer, logger):
     init_random()
 
-    default_gpu = cfg['model']['default_gpu']
-    device = torch.device("cuda:{}".format(default_gpu) if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda:{}".format(cfg['model']['default_gpu'])
+                          if torch.cuda.is_available() else 'cpu')
 
     # create dataSet
     data_sets = create_dataset(cfg, writer, logger)  # source_train\ target_train\ source_valid\ target_valid + _loader
-
-    model = CustomModel(cfg, writer, logger)
-
-    # Setup Metrics
-    running_metrics_val = RunningScore(cfg['data']['target']['n_class'])
-    source_running_metrics_val = RunningScore(cfg['data']['target']['n_class'])
-    val_loss_meter = AverageMeter()
-    source_val_loss_meter = AverageMeter()
-    time_meter = AverageMeter()
-    loss_fn = get_loss_function(cfg)
-
-    epochs = cfg['training']['epochs']
-
-    source_train_loader = data_sets.source_train_loader
-    target_train_loader = data_sets.target_train_loader
-    logger.info('source train batchsize is {}'.format(source_train_loader.args.get('batch_size')))
-    print('source train batchsize is {}'.format(source_train_loader.args.get('batch_size')))
-    logger.info('target train batchsize is {}'.format(target_train_loader.batch_size))
-    print('target train batchsize is {}'.format(target_train_loader.batch_size))
-
-    val_loader = None
     if cfg.get('valset') == 'gta5':
         val_loader = data_sets.source_valid_loader
     else:
         val_loader = data_sets.target_valid_loader
+    logger.info('source train batchsize is {}'.format(data_sets.source_train_loader.args.get('batch_size')))
+    print('source train batchsize is {}'.format(data_sets.source_train_loader.args.get('batch_size')))
+    logger.info('target train batchsize is {}'.format(data_sets.target_train_loader.batch_size))
+    print('target train batchsize is {}'.format(data_sets.target_train_loader.batch_size))
     logger.info('valset is {}'.format(cfg.get('valset')))
     print('val_set is {}'.format(cfg.get('valset')))
     logger.info('val batch_size is {}'.format(val_loader.batch_size))
     print('val batch_size is {}'.format(val_loader.batch_size))
+
+    # create model
+    model = CustomModel(cfg, writer, logger)
 
     # load category anchors
     objective_vectors = torch.load('category_anchors')
     model.objective_vectors = objective_vectors['objective_vectors']
     model.objective_vectors_num = objective_vectors['objective_num']
 
+    # Setup Metrics
+    running_metrics_val = RunningScore(cfg['data']['target']['n_class'])
+    source_running_metrics_val = RunningScore(cfg['data']['source']['n_class'])
+    val_loss_meter, source_val_loss_meter = AverageMeter(), AverageMeter()
+    time_meter = AverageMeter()
+    loss_fn = get_loss_function(cfg)
+
     # begin training
     model.iter = 0
+    epochs = cfg['training']['epochs']
     for epoch in tqdm(range(epochs)):
         if model.iter > cfg['training']['train_iters']:
             break
 
         for (target_image, target_label, target_img_name) in tqdm(data_sets.target_train_loader):
+            start_ts = time.time()
             model.iter += 1
             if model.iter > cfg['training']['train_iters']:
                 break
-            images, labels, source_img_name = data_sets.source_train_loader.next()
-            start_ts = time.time()
 
+            # train on source & target
+            images, labels, source_img_name = data_sets.source_train_loader.next()
             images, labels = images.to(device), labels.to(device)
             target_image, target_label = target_image.to(device), target_label.to(device)
 
             model.train(logger=logger)
 
-            if cfg['training'].get('freeze_bn') == True:
+            if cfg['training'].get('freeze_bn'):
                 model.freeze_bn_apply()
             model.optimizer_zero_grad()
 
             loss, loss_cls_L2, loss_pseudo = model.step(images, labels, target_image, target_label)
+            model.scheduler_step()
+
             if loss_cls_L2 > 10:
                 logger.info('loss_cls_l2 abnormal!!')
 
@@ -130,7 +127,6 @@ def train(cfg, writer, logger):
                 logger.info('thr_Acc: {}'.format(
                     np.mean(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 2])))
 
-            model.scheduler_step()
 
             # evaluation
             if (model.iter + 1) % cfg['training']['val_interval'] == 0 or \

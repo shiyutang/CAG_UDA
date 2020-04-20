@@ -285,6 +285,7 @@ class CustomModel():
             loss_L2_target_cls = self.class_vectors_alignment(target_ids, target_vectors)
             # target_vectors, target_ids = self.calculate_mean_vector(target_feat_cls, target_output, threshold_arg.float())
             # loss_L2_target_cls += self.class_vectors_alignment(target_ids, target_vectors)
+
         loss_L2_cls = self.cls_feature_weight * (loss_L2_source_cls + loss_L2_target_cls)
 
         loss = torch.Tensor([0]).cuda()
