@@ -127,7 +127,6 @@ def train(cfg, writer, logger):
                 logger.info('thr_Acc: {}'.format(
                     np.mean(model.metrics.classes_recall_thr[:, 0] / model.metrics.classes_recall_thr[:, 2])))
 
-
             # evaluation
             if (model.iter + 1) % cfg['training']['val_interval'] == 0 or \
                     (model.iter + 1) == cfg['training']['train_iters']:
