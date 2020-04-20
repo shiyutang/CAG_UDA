@@ -9,10 +9,12 @@ import random
 
 from collections import OrderedDict
 
+
 def recursive_glob(rootdir=".", suffix=""):
     """Performs recursive glob with given suffix and rootdir 
         :param rootdir is the root directory
         :param suffix is the suffix to be searched
+        :return the filenames that under the rootdir with full path, not the relative one
     """
     return [
         os.path.join(looproot, filename)
@@ -46,18 +48,6 @@ def convert_state_dict(state_dict):
         new_state_dict[name] = v
     return new_state_dict
 
-
-def get_logger(logdir):
-    logger = logging.getLogger('ptsemseg')
-    ts = str(datetime.datetime.now()).split('.')[0].replace(" ", "_")
-    ts = ts.replace(":", "_").replace("-","_")
-    file_path = os.path.join(logdir, 'run_{}.log'.format(ts))
-    hdlr = logging.FileHandler(file_path)
-    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-    hdlr.setFormatter(formatter)
-    logger.addHandler(hdlr) 
-    logger.setLevel(logging.INFO)
-    return logger
 
 class choice():
     """

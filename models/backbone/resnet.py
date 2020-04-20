@@ -1,4 +1,5 @@
 import math
+import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 from models.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
@@ -150,9 +151,11 @@ class ResNet(nn.Module):
     def _load_pretrained_model(self):
         pretrain_dict = None
         if self.version == 'resnet101':
-            pretrain_dict = model_zoo.load_url('https://download.pytorch.org/models/resnet101-5d3b4d8f.pth')
+            pretrain_dict = torch.load('/data/Projects/MaxSquareLoss/pretrained_model/resnet101-5d3b4d8f.pth')
+            # pretrain_dict = model_zoo.load_url('https://download.pytorch.org/models/resnet101-5d3b4d8f.pth')
         elif self.version == 'resnet50':
-            pretrain_dict = model_zoo.load_url('https://download.pytorch.org/models/resnet50-19c8e357.pth')
+            pretrain_dict = torch.load('/data/Projects/DTA.pytorch/models/pretrained_model/resnet50-19c8e357.pth')
+            # pretrain_dict = model_zoo.load_url('https://download.pytorch.org/models/resnet50-19c8e357.pth')
         model_dict = {}
         state_dict = self.state_dict()
         for k, v in pretrain_dict.items():

@@ -34,7 +34,7 @@ from augmentations import get_composed_augmentations
 from models.adaptation_model import CustomModel, CustomMetrics
 from optimizers import get_optimizer
 from schedulers import get_scheduler
-from metrics import runningScore, averageMeter
+from metrics import RunningScore, AverageMeter
 from loss import get_loss_function
 from utils import sync_batchnorm
 from tensorboardX import SummaryWriter
@@ -53,11 +53,11 @@ def CAC(cfg, writer, logger):
     model = CustomModel(cfg, writer, logger)
 
     # Setup Metrics
-    running_metrics_val = runningScore(cfg['data']['target']['n_class'])
-    source_running_metrics_val = runningScore(cfg['data']['target']['n_class'])
-    val_loss_meter = averageMeter()
-    source_val_loss_meter = averageMeter()
-    time_meter = averageMeter()
+    running_metrics_val = RunningScore(cfg['data']['target']['n_class'])
+    source_running_metrics_val = RunningScore(cfg['data']['target']['n_class'])
+    val_loss_meter = AverageMeter()
+    source_val_loss_meter = AverageMeter()
+    time_meter = AverageMeter()
     loss_fn = get_loss_function(cfg)
     flag_train = True
 
@@ -103,7 +103,6 @@ def CAC(cfg, writer, logger):
             i = model.iter
             if i > cfg['training']['train_iters']:
                 break
-            source_batchsize = cfg['data']['source']['batch_size']
             images, labels, source_img_name = datasets.source_train_loader.next()
             start_ts = time.time()
 
@@ -115,7 +114,7 @@ def CAC(cfg, writer, logger):
             model.train(logger=logger)
             if cfg['training'].get('freeze_bn') == True:
                 model.freeze_bn_apply()
-            model.optimizer_zerograd()
+            model.optimizer_zero_grad()
             if model.PredNet.training:
                 model.PredNet.eval()
             with torch.no_grad():

@@ -17,23 +17,22 @@ from models.aspp import ASPP
 from models.discriminator import FCDiscriminator, FCDiscriminator_low, FCDiscriminator_out, FCDiscriminator_class
 from loss import get_loss_function
 from .utils import freeze_bn, GradReverse, normalisation_pooling
-from metrics import runningScore
+from metrics import RunningScore
 
 
-
-class CustomMetrics():
+class CustomMetrics:
     def __init__(self, numbers=19):
         self.class_numbers = numbers
         self.classes_recall_thr = np.zeros([19, 3])
         self.classes_recall_thr_num = np.zeros([19])
         self.classes_recall_clu = np.zeros([19, 3])
         self.classes_recall_clu_num = np.zeros([19])
-        self.running_metrics_val_threshold = runningScore(self.class_numbers)
-        self.running_metrics_val_clusters = runningScore(self.class_numbers)
+        self.running_metrics_val_threshold = RunningScore(self.class_numbers)
+        self.running_metrics_val_clusters = RunningScore(self.class_numbers)
         self.clu_threshold = np.full((19), 2.5)
     
-    def update(self, feat_cls, outputs, labels, model):     
-        '''calculate accuracy. caring about recall but not IoU'''
+    def update(self, feat_cls, outputs, labels, model):
+        """calculate accuracy. caring about recall but not IoU"""
         batch, width, height = labels.shape
         labels = labels.reshape([batch, 1, width, height]).float()
         labels = F.interpolate(labels, size=feat_cls.size()[2:], mode='nearest')
@@ -340,7 +339,7 @@ class CustomModel():
         for scheduler in self.schedulers:
             scheduler.step()
     
-    def optimizer_zerograd(self):
+    def optimizer_zero_grad(self):
         # for net in self.nets:
         #     self.optimizers[net.__class__.__name__].zero_grad()
         for optimizer in self.optimizers:

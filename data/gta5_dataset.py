@@ -17,6 +17,7 @@ from .utils import recursive_glob
 from augmentations import get_composed_augmentations
 from data import BaseDataset
 
+
 class GTA5_loader(BaseDataset):
     """
     GTA5    synthetic dataset
@@ -46,13 +47,8 @@ class GTA5_loader(BaseDataset):
     ]
 
     label_colours = dict(zip(range(19), colors))
-    def __init__(
-        self, 
-        cfg,
-        writer,
-        logger,
-        augmentations=None,
-    ):
+
+    def __init__(self, cfg, writer, logger, augmentations=None):
         self.cfg = cfg
         self.root = cfg['rootpath']
         self.split = cfg['split']
@@ -69,8 +65,8 @@ class GTA5_loader(BaseDataset):
         self.image_base_path = os.path.join(self.root, 'images')
         self.label_base_path = os.path.join(self.root, 'labels')
         self.distribute = np.zeros(self.n_classes, dtype=float)
-        splits = io.loadmat(os.path.join(self.root, 'split.mat'))
         self.ids = recursive_glob(rootdir=self.label_base_path, suffix=".png")
+        # print('self.ids, self.label_base_path', self.ids, self.label_base_path)
         if cfg.get('shuffle') != None:
             np.random.shuffle(self.ids)
 

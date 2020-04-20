@@ -11,8 +11,6 @@ from .utils import recursive_glob
 from augmentations import *
 from data.base_dataset import BaseDataset
 
-import random
-
 
 class Cityscapes_loader(BaseDataset):
     """cityscapesLoader
@@ -162,7 +160,9 @@ class Cityscapes_loader(BaseDataset):
         lbl_path = os.path.join(
             self.annotations_base,
             img_path.split(os.sep)[-2],
-            os.path.basename(img_path)[:-15] + "gtFine_labelIds.png",
+            img_path.replace("leftImg8bit", "gtFine", 1) \
+                .replace("leftImg8bit", "gtFine_labelIds"),
+            # os.path.basename(img_path)[:-15] + "gtFine_labelIds.png",
         )
 
         img = Image.open(img_path)
