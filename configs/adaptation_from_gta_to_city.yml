@@ -1,6 +1,7 @@
 trainset: gta5
 valset: cityscapes
 
+
 model:
     arch: deeplab101
     pretrained: True
