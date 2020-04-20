@@ -42,8 +42,8 @@ def monitor(model):
     logger.info(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 2])
     writer.add_scalar('metrics_clus/mIOU', score_cl["Mean IoU : \t"], model.iter + 1)
     writer.add_scalar('metrics_clus/Recall', model.metrics.calc_mean_Clu_recall(), model.iter + 1)
-    writer.add_scalar('metrics_clus/Acc',
-                      np.mean(model.metrics.classes_recall_clu[:, 0] / model.metrics.classes_recall_clu[:, 1]),
+    writer.add_scalar('metrics_clus/Acc', np.mean(model.metrics.classes_recall_clu[:, 0]
+                                                  / model.metrics.classes_recall_clu[:, 1]),
                       model.iter + 1)
 
     score_cl, _ = model.metrics.running_metrics_val_threshold.get_scores()
