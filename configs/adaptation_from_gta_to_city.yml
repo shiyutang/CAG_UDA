@@ -15,6 +15,7 @@ model:
         version: resnet101
         aux_loss: True
     default_gpu: 0
+    n_class: 19
 
 data:
     source:

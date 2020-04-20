@@ -30,7 +30,7 @@ class CustomMetrics:
         self.running_metrics_val_threshold = RunningScore(self.class_numbers)
         self.running_metrics_val_clusters = RunningScore(self.class_numbers)
         self.clu_threshold = np.full((19), 2.5)
-    
+
     def update(self, feat_cls, outputs, labels, model):
         """calculate accuracy. caring about recall but not IoU"""
         batch, width, height = labels.shape
@@ -40,34 +40,38 @@ class CustomMetrics:
         outputs_threshold = F.softmax(outputs_threshold, dim=1)
         self.running_metrics_val_threshold.update(labels.cpu().numpy(), outputs_threshold.argmax(1).cpu().numpy())
         for i in range(19):
-            outputs_threshold[:, i, :, :] = torch.where(outputs_threshold[:, i, :, :] > model.class_threshold[i], torch.Tensor([1]).cuda(), torch.Tensor([0]).cuda())
+            outputs_threshold[:, i, :, :] = torch.where(outputs_threshold[:, i, :, :] > model.class_threshold[i],
+                                                        torch.Tensor([1]).cuda(), torch.Tensor([0]).cuda())
 
         _batch, _channel, _w, _h = outputs_threshold.shape
-        _tmp = np.full([_batch, 1, _w, _h], 0.2,)
+        _tmp = np.full([_batch, 1, _w, _h], 0.2, )
         _tmp = torch.Tensor(_tmp).cuda()
         _tmp = torch.cat((outputs_threshold, _tmp), 1)
         threshold_arg = _tmp.argmax(1, keepdim=True)
-        threshold_arg[threshold_arg == 19] = 250 #ignore index
+        threshold_arg[threshold_arg == 19] = 250  # ignore index
         truth, pred_all, truth_all = self.calc_recall(labels.cpu().int().numpy(), threshold_arg.cpu().int().numpy())
         self.classes_recall_thr[:, 0] += truth
         self.classes_recall_thr[:, 2] += pred_all
         self.classes_recall_thr[:, 1] += truth_all
 
-
         outputs_cluster = outputs.clone()
         for i in range(19):
-            filters = torch.Tensor(model.objective_vectors[i]).reshape(256,1,1)
-            outputs_cluster[:, i, :, :] = torch.norm( torch.Tensor(model.objective_vectors[i]).reshape(-1,1,1).expand(-1,128,224).cuda() - feat_cls, 2, dim=1,)
+            filters = torch.Tensor(model.objective_vectors[i]).reshape(256, 1, 1)
+            outputs_cluster[:, i, :, :] = torch.norm(
+                torch.Tensor(model.objective_vectors[i]).reshape(-1, 1, 1).expand(-1, 128, 224).cuda() - feat_cls, 2,
+                dim=1, )
         outputs_cluster_min, outputs_cluster_arg = outputs_cluster.min(dim=1, keepdim=True)
         outputs_cluster_second = outputs_cluster.scatter_(1, outputs_cluster_arg, 100)
         if torch.unique(outputs_cluster_second.argmax(1) - outputs_cluster_arg.squeeze()).squeeze().item() != 0:
             raise NotImplementedError('wrong when computing L2 norm!!')
         outputs_cluster_secondmin, outputs_cluster_secondarg = outputs_cluster_second.min(dim=1, keepdim=True)
         self.running_metrics_val_clusters.update(labels.cpu().numpy(), outputs_cluster_arg.cpu().numpy())
-        
+
         tmp_arg = np.copy(outputs_cluster_arg.cpu().numpy())
-        outputs_cluster_arg[(outputs_cluster_secondmin - outputs_cluster_min) < torch.Tensor(self.clu_threshold[tmp_arg]).cuda()] = 250
-        truth, pred_all, truth_all = self.calc_recall(labels.cpu().int().numpy(), outputs_cluster_arg.cpu().int().numpy())
+        outputs_cluster_arg[
+            (outputs_cluster_secondmin - outputs_cluster_min) < torch.Tensor(self.clu_threshold[tmp_arg]).cuda()] = 250
+        truth, pred_all, truth_all = self.calc_recall(labels.cpu().int().numpy(),
+                                                      outputs_cluster_arg.cpu().int().numpy())
         self.classes_recall_clu[:, 0] += truth
         self.classes_recall_clu[:, 2] += pred_all
         self.classes_recall_clu[:, 1] += truth_all
@@ -83,14 +87,14 @@ class CustomMetrics:
             truth_all[i] = (gt == i).sum()
         pass
         return truth, pred_all, truth_all
-    
+
     def calc_mean_Clu_recall(self, ):
         # recall = np.zeros([self.class_numbers])
         # for i in range(self.class_numbers):
         #     if self.classes_recall_clu_num[i] != 0:
         #         recall[i] = self.classes_recall_clu[i] / self.classes_recall_clu_num[i]
         return np.mean(self.classes_recall_clu[:, 0] / self.classes_recall_clu[:, 1])
-    
+
     def calc_mean_Thr_recall(self, ):
         # recall = np.zeros([self.class_numbers])
         # for i in range(self.class_numbers):
@@ -104,15 +108,16 @@ class CustomMetrics:
         self.classes_recall_clu = np.zeros([19, 3])
         self.classes_recall_thr = np.zeros([19, 3])
 
+
 class CustomModel():
     def __init__(self, cfg, writer, logger):
         # super(CustomModel, self).__init__()
         self.cfg = cfg
         self.writer = writer
-        self.class_numbers = 19
-        self.logger = logger
         cfg_model = cfg['model']
         self.cfg_model = cfg_model
+        self.class_numbers = cfg_model['n_class']
+        self.logger = logger
         self.best_iou = -100
         self.iter = 0
         self.nets = []
@@ -129,38 +134,22 @@ class CustomModel():
         self.metrics = CustomMetrics(self.class_numbers)
         self.cls_feature_weight = cfg['training']['cls_feature_weight']
 
-        bn = cfg_model['bn']
-        if bn == 'sync_bn':
-            BatchNorm = SynchronizedBatchNorm2d
-        # elif bn == 'sync_abn':
-        #     BatchNorm = InPlaceABNSync
-        elif bn == 'bn':
-            BatchNorm = nn.BatchNorm2d
-        # elif bn == 'abn':
-        #     BatchNorm = InPlaceABN
-        elif bn == 'gn':
-            BatchNorm = nn.GroupNorm
-        else:
-            raise NotImplementedError('batch norm choice {} is not implemented'.format(bn))
-        self.PredNet = DeepLab(
-                num_classes=19,
-                backbone=cfg_model['basenet']['version'],
-                output_stride=16,
-                bn=cfg_model['bn'],
-                freeze_bn=True,
-                ).cuda()
+        self.PredNet = DeepLab(num_classes=19,
+                               backbone=cfg_model['basenet']['version'],
+                               output_stride=16, bn=cfg_model['bn'],
+                               freeze_bn=True).cuda()
         self.load_PredNet(cfg, writer, logger, dir=None, net=self.PredNet)
-        self.PredNet_DP = self.init_device(self.PredNet, gpu_id=self.default_gpu, whether_DP=True) 
+        self.PredNet_DP = self.init_device(self.PredNet, gpu_id=self.default_gpu, whether_DP=True)
         self.PredNet.eval()
         self.PredNet_num = 0
 
         self.BaseNet = DeepLab(
-                            num_classes=19,
-                            backbone=cfg_model['basenet']['version'],
-                            output_stride=16,
-                            bn=cfg_model['bn'],
-                            freeze_bn=False,
-                            )
+            num_classes=19,
+            backbone=cfg_model['basenet']['version'],
+            output_stride=16,
+            bn=cfg_model['bn'],
+            freeze_bn=False,
+        )
 
         logger.info('the backbone is {}'.format(cfg_model['basenet']['version']))
 
@@ -169,10 +158,10 @@ class CustomModel():
         self.nets_DP = [self.BaseNet_DP]
 
         self.optimizers = []
-        self.schedulers = []        
+        self.schedulers = []
         # optimizer_cls = get_optimizer(cfg)
         optimizer_cls = torch.optim.SGD
-        optimizer_params = {k:v for k, v in cfg['training']['optimizer'].items() 
+        optimizer_params = {k: v for k, v in cfg['training']['optimizer'].items()
                             if k != 'name'}
         # optimizer_cls_D = torch.optim.SGD
         # optimizer_params_D = {k:v for k, v in cfg['training']['optimizer_D'].items() 
@@ -193,14 +182,14 @@ class CustomModel():
         self.smoothloss = nn.SmoothL1Loss()
         self.triplet_loss = nn.TripletMarginLoss()
 
-    def create_PredNet(self,):
-        ss =  DeepLab(
-                num_classes=19,
-                backbone=self.cfg_model['basenet']['version'],
-                output_stride=16,
-                bn=self.cfg_model['bn'],
-                freeze_bn=True,
-                ).cuda()
+    def create_PredNet(self, ):
+        ss = DeepLab(
+            num_classes=19,
+            backbone=self.cfg_model['basenet']['version'],
+            output_stride=16,
+            bn=self.cfg_model['bn'],
+            freeze_bn=True,
+        ).cuda()
         ss.eval()
         return ss
 
@@ -246,7 +235,7 @@ class CustomModel():
         ids = []
         for n in range(feat_cls.size()[0]):
             for t in range(self.class_numbers):
-                if scale_factor[n][t].item()==0:
+                if scale_factor[n][t].item() == 0:
                     continue
                 if (outputs_pred[n][t] > 0).sum() < 10:
                     continue
@@ -275,11 +264,13 @@ class CustomModel():
         loss_L2_target_cls = torch.Tensor([0]).cuda(self.split_gpu)
         _, _, target_feat_cls, target_output = self.forward(target_x)
 
-        if self.cfg['training']['loss_L2_cls']:     # distance loss
+        if self.cfg['training']['loss_L2_cls']:  # distance loss
             _batch, _w, _h = source_label.shape
-            source_label_downsampled = source_label.reshape([_batch,1,_w, _h]).float()
-            source_label_downsampled = F.interpolate(source_label_downsampled.float(), size=source_feat_cls.size()[2:], mode='nearest')   #or F.softmax(input=source_output, dim=1)
-            source_vectors, source_ids = self.calculate_mean_vector(source_feat_cls, source_output, source_label_downsampled)
+            source_label_downsampled = source_label.reshape([_batch, 1, _w, _h]).float()
+            source_label_downsampled = F.interpolate(source_label_downsampled.float(), size=source_feat_cls.size()[2:],
+                                                     mode='nearest')  # or F.softmax(input=source_output, dim=1)
+            source_vectors, source_ids = self.calculate_mean_vector(source_feat_cls, source_output,
+                                                                    source_label_downsampled)
             target_vectors, target_ids = self.calculate_mean_vector(target_feat_cls, target_output, cluster_arg.float())
             loss_L2_source_cls = self.class_vectors_alignment(source_ids, source_vectors)
             loss_L2_target_cls = self.class_vectors_alignment(target_ids, target_vectors)
@@ -292,7 +283,8 @@ class CustomModel():
         batch, _, w, h = cluster_arg.shape
         # cluster_arg[cluster_arg != threshold_arg] = 250
         loss_CTS = (self.loss_fn(input=target_output, target=cluster_arg.reshape([batch, w, h])) \
-            + self.loss_fn(input=target_output, target=threshold_arg.reshape([batch, w, h]))) / 2   # CAG-based and probability-based PLA
+                    + self.loss_fn(input=target_output, target=threshold_arg.reshape(
+                    [batch, w, h]))) / 2  # CAG-based and probability-based PLA
         # loss_CTS = self.loss_fn(input=target_output, target=cluster_arg.reshape([batch, w, h]))   # CAG-based PLA
         # loss_CTS = self.loss_fn(input=target_output, target=threshold_arg.reshape([batch, w, h])) # probability-based PLA
         if self.G_train and self.cfg['training']['loss_pseudo_label']:
@@ -320,7 +312,8 @@ class CustomModel():
         for i in range(len(ids)):
             if ids[i] not in self.valid_classes:
                 continue
-            new_loss = self.smoothloss(vectors[i].squeeze().cuda(self.default_gpu), torch.Tensor(self.objective_vectors[ids[i]]).cuda(self.default_gpu))
+            new_loss = self.smoothloss(vectors[i].squeeze().cuda(self.default_gpu),
+                                       torch.Tensor(self.objective_vectors[ids[i]]).cuda(self.default_gpu))
             while (new_loss.item() > 5):
                 new_loss = new_loss / 10
             loss = loss + new_loss
@@ -339,13 +332,13 @@ class CustomModel():
         #     self.schedulers[net.__class__.__name__].step()
         for scheduler in self.schedulers:
             scheduler.step()
-    
+
     def optimizer_zero_grad(self):
         # for net in self.nets:
         #     self.optimizers[net.__class__.__name__].zero_grad()
         for optimizer in self.optimizers:
             optimizer.zero_grad()
-    
+
     def optimizer_step(self):
         # for net in self.nets:
         #     self.optimizers[net.__class__.__name__].step()
@@ -360,7 +353,7 @@ class CustomModel():
         if whether_DP:
             net = DataParallelWithCallback(net, device_ids=range(torch.cuda.device_count()))
         return net
-    
+
     def eval(self, net=None, logger=None):
         """Make specific models eval mode during test time"""
         # if issubclass(net, nn.Module) or issubclass(net, BaseModel):
@@ -369,11 +362,11 @@ class CustomModel():
                 net.eval()
             for net in self.nets_DP:
                 net.eval()
-            if logger!=None:    
-                logger.info("Successfully set the model eval mode") 
+            if logger != None:
+                logger.info("Successfully set the model eval mode")
         else:
             net.eval()
-            if logger!=None:    
+            if logger != None:
                 logger("Successfully set {} eval mode".format(net.__class__.__name__))
         return
 
@@ -393,7 +386,7 @@ class CustomModel():
             net.train()
         return
 
-    def set_requires_grad(self, logger, net, requires_grad = False):
+    def set_requires_grad(self, logger, net, requires_grad=False):
         """Set requires_grad=Fasle for all the networks to avoid unnecessary computations
         Parameters:
             net (BaseModel)       -- the network which will be operated on
@@ -404,8 +397,8 @@ class CustomModel():
             parameter.requires_grad = requires_grad
         # print("Successfully set {} requires_grad with {}".format(net.__class__.__name__, requires_grad))
         # return
-        
-    def set_requires_grad_layer(self, logger, net, layer_type='batchnorm', requires_grad=False):  
+
+    def set_requires_grad_layer(self, logger, net, layer_type='batchnorm', requires_grad=False):
         '''    set specific type of layers whether needing grad
         '''
 
@@ -430,6 +423,7 @@ class CustomModel():
         """
         init_type = cfg.get('init_type', init_type)
         init_gain = cfg.get('init_gain', init_gain)
+
         def init_func(m):  # define the initialization function
             classname = m.__class__.__name__
             if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
@@ -446,11 +440,10 @@ class CustomModel():
                 if hasattr(m, 'bias') and m.bias is not None:
                     nn.init.constant_(m.bias.data, 0.0)
             elif isinstance(m, SynchronizedBatchNorm2d) or classname.find('BatchNorm2d') != -1 \
-                or isinstance(m, nn.GroupNorm):
+                    or isinstance(m, nn.GroupNorm):
                 # or isinstance(m, InPlaceABN) or isinstance(m, InPlaceABNSync):
                 m.weight.data.fill_(1)
-                m.bias.data.zero_() # BatchNorm Layer's weight is not a matrix; only normal distribution applies.
-
+                m.bias.data.zero_()  # BatchNorm Layer's weight is not a matrix; only normal distribution applies.
 
         print('initialize {} with {}'.format(init_type, net.__class__.__name__))
         logger.info('initialize {} with {}'.format(init_type, net.__class__.__name__))
@@ -459,11 +452,11 @@ class CustomModel():
 
     def adaptive_load_nets(self, net, model_weight):
         model_dict = net.state_dict()
-        pretrained_dict = {k : v for k, v in model_weight.items() if k in model_dict}
+        pretrained_dict = {k: v for k, v in model_weight.items() if k in model_dict}
         model_dict.update(pretrained_dict)
         net.load_state_dict(model_dict)
 
-    def load_nets(self, cfg, writer, logger):    # load pretrained weights on the net
+    def load_nets(self, cfg, writer, logger):  # load pretrained weights on the net
         if os.path.isfile(cfg['training']['resume']):
             logger.info(
                 "Loading model and optimizer from checkpoint '{}'".format(cfg['training']['resume'])
@@ -491,8 +484,7 @@ class CustomModel():
         else:
             raise Exception("No checkpoint found at '{}'".format(cfg['training']['resume']))
 
-
-    def load_PredNet(self, cfg, writer, logger, dir=None, net=None):    # load pretrained weights on the net
+    def load_PredNet(self, cfg, writer, logger, dir=None, net=None):  # load pretrained weights on the net
         dir = dir or cfg['training']['Pred_resume']
         best_iou = 0
         if os.path.isfile(dir):
@@ -519,11 +511,10 @@ class CustomModel():
             net.best_iou = best_iou
         return best_iou
 
-
-    def set_optimizer(self, optimizer):  #set optimizer to all nets
+    def set_optimizer(self, optimizer):  # set optimizer to all nets
         pass
 
-    def reset_objective_SingleVector(self,):
+    def reset_objective_SingleVector(self, ):
         self.objective_vectors = np.zeros([19, 256])
         self.objective_vectors_num = np.zeros([19])
         self.objective_vectors_dis = np.zeros([19, 19])
@@ -547,6 +538,7 @@ class CustomModel():
             pass
         else:
             raise NotImplementedError('no such updating way of objective vectors {}'.format(name))
+
 
 def grad_reverse(x):
     return GradReverse()(x)
